@@ -105,7 +105,7 @@ func main() {
 				return
 			}
 
-			if msg == "!random" {
+			if msg == "!random" || msg == "!r" {
 				if stream != nil {
 					stream.Stop()
 				}
@@ -118,7 +118,7 @@ func main() {
 
 				name := keys[rand.Int()%len(keys)]
 				msg = "!p " + name
-				e.Sender.Channel.Send("!random = "+msg, false)
+				e.Sender.Channel.Send(msg, false)
 			}
 
 			if msg == "!l" || msg == "l!" {
