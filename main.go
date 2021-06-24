@@ -20,6 +20,24 @@ import (
 	"github.com/k3a/html2text"
 )
 
+type sourceFileTrimmed string
+
+// SourceFileTrimmed is standard file source with trimmed silence
+func SourceFileTrimmed(filename string) gumbleffmpeg.Source {
+	return sourceFileTrimmed(filename)
+}
+
+func (s sourceFileTrimmed) Arguments() []string {
+	return []string{"-i", string(s), "-af", "silenceremove=1:0:-30dB"}
+}
+
+func (sourceFileTrimmed) Start(*exec.Cmd) error {
+	return nil
+}
+
+func (sourceFileTrimmed) Done() {
+}
+
 func main() {
 	files := make(map[string]string)
 	var stream *gumbleffmpeg.Stream
@@ -170,7 +188,7 @@ func main() {
 			if stream != nil && stream.State() == gumbleffmpeg.StatePlaying {
 				stream.Stop()
 			}
-			stream = gumbleffmpeg.New(e.Client, gumbleffmpeg.SourceFile(file))
+			stream = gumbleffmpeg.New(e.Client, SourceFileTrimmed(file))
 			if err := stream.Play(); err != nil {
 				e.Sender.Channel.Send("err: "+err.Error(), false)
 			} else {

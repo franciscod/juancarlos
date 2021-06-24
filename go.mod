@@ -9,3 +9,5 @@ require (
 	golang.org/x/text v0.3.3 // indirect
 	layeh.com/gumble v0.0.0-20200528195103-d5a9569f0683
 )
+
+replace layeh.com/gumble => github.com/franciscod/gumble v0.0.0-20210624075104-8aa109bf5be3
