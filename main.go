@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
+	"io"
 	"math/rand"
 	"os"
 	"os/exec"
@@ -37,6 +39,11 @@ func (sourceFileTrimmed) Start(*exec.Cmd) error {
 
 func (sourceFileTrimmed) Done() {
 }
+
+var rcrBaseURL = "http://79.120.11.40:8000/"
+var rcrStatusURL = rcrBaseURL + "status.xsl"
+var rcrAudioURL = rcrBaseURL + "chiptune.ogg"
+var rcrInfoCmd = "curl " + rcrStatusURL + " | pup '.roundbox:nth-child(3) tr:last-child td:last-child text{}' | ex -c '%j|%p|q!' /dev/stdin"
 
 func main() {
 	files := make(map[string]string)
@@ -173,6 +180,34 @@ func main() {
 				e.Sender.Channel.Send("OK! !p "+name, false)
 
 			}
+
+			if msg == "!wat" {
+				cmd := exec.Command("/bin/bash", "-c", rcrInfoCmd)
+
+				var stdBuffer bytes.Buffer
+				mw := io.MultiWriter(os.Stdout, &stdBuffer)
+
+				cmd.Stdout = mw
+
+				if err := cmd.Run(); err != nil {
+					e.Sender.Channel.Send(err.Error(), false)
+				}
+
+				e.Sender.Channel.Send(stdBuffer.String(), false)
+
+			}
+
+			if msg == "!rcr" {
+				if stream != nil && stream.State() == gumbleffmpeg.StatePlaying {
+					stream.Stop()
+				}
+
+				stream = gumbleffmpeg.New(e.Client, gumbleffmpeg.SourceFile(rcrAudioURL))
+				if err := stream.Play(); err != nil {
+					e.Sender.Channel.Send("err: "+err.Error(), false)
+				}
+			}
+
 			var key = ""
 			if msg[:3] == "!p " || msg[:3] == "p! " {
 				key = msg[3:]
