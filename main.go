@@ -169,7 +169,7 @@ func main() {
 				}
 
 				e.Sender.Channel.Send("ok...", false)
-				cmd := exec.Command("/usr/bin/python3", "/home/user/.local/bin/youtube-dl",
+				cmd := exec.Command("/usr/bin/env", "youtube-dl",
 					"-x", link,
 					"-o", "audio/"+name+".%(id)s.$(ext)s")
 				err := cmd.Run()
