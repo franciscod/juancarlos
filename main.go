@@ -203,15 +203,17 @@ func main() {
 				}
 
 				e.Sender.Channel.Send("ok...", false)
-				cmd := exec.Command("/usr/bin/env", "youtube-dl",
-					"-x", link,
-					"-o", "audio/"+name+".%(id)s.$(ext)s")
-				err := cmd.Run()
-				if err != nil {
-					e.Sender.Channel.Send(err.Error(), false)
-				}
-				Reload()
-				e.Sender.Channel.Send("OK! !p "+name, false)
+				go (func() {
+					cmd := exec.Command("/usr/bin/env", "youtube-dl",
+						"-x", link,
+						"-o", "audio/"+name+".%(id)s.$(ext)s")
+					err := cmd.Run()
+					if err != nil {
+						e.Sender.Channel.Send(err.Error(), false)
+					}
+					Reload()
+					e.Sender.Channel.Send("OK! !p "+name, false)
+				})()
 
 			}
 
