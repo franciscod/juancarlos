@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"container/list"
+
 	"layeh.com/gumble/gumble"
 	"layeh.com/gumble/gumbleffmpeg"
 	"layeh.com/gumble/gumbleutil"
@@ -47,6 +49,7 @@ var rcrInfoCmd = "curl " + rcrStatusURL + " | pup '.roundbox:nth-child(3) tr:las
 
 func main() {
 	files := make(map[string]string)
+	queue := list.New()
 	var stream *gumbleffmpeg.Stream
 
 	flag.Usage = func() {
@@ -69,10 +72,41 @@ func main() {
 	}
 	var cucha *gumble.Channel
 
+	var gumcli *gumble.Client
+
+	go (func () {
+		for {
+			time.Sleep(1 * time.Second)
+
+			if queue.Len() == 0 {
+				continue
+			}
+			if stream != nil && stream.State() == gumbleffmpeg.StatePlaying {
+				continue
+			}
+			key := queue.Front()
+			if key == nil {
+				continue
+			}
+			file, ok := files[key.Value.(string)]
+			queue.Remove(key)
+			if !ok {
+				// gumcli.Send("?")
+				continue
+			}
+			stream = gumbleffmpeg.New(gumcli, SourceFileTrimmed(file))
+			if err := stream.Play(); err != nil {
+				// gumcli.Send("err: "+err.Error())
+			}
+			time.Sleep(4 * time.Second)
+		}
+	})()
+
 	gumbleutil.Main(gumbleutil.AutoBitrate, gumbleutil.Listener{
 		Connect: func(e *gumble.ConnectEvent) {
 			Reload()
 			e.Client.Self.Register()
+			gumcli = e.Client
 			root := e.Client.Channels[0]
 			cucha = root.Find("la cucha de juancarlos")
 		},
@@ -209,8 +243,13 @@ func main() {
 			}
 
 			var key = ""
+			var enqueue = false
 			if msg[:3] == "!p " || msg[:3] == "p! " {
 				key = msg[3:]
+			}
+			if msg[:3] == "!q " || msg[:3] == "q! " {
+				key = msg[3:]
+				enqueue = true
 			}
 			if key == "" {
 				return
@@ -220,14 +259,19 @@ func main() {
 				e.Sender.Channel.Send("?", false)
 				return
 			}
-			if stream != nil && stream.State() == gumbleffmpeg.StatePlaying {
-				stream.Stop()
-			}
-			stream = gumbleffmpeg.New(e.Client, SourceFileTrimmed(file))
-			if err := stream.Play(); err != nil {
-				e.Sender.Channel.Send("err: "+err.Error(), false)
+			if !enqueue {
+				if stream != nil && stream.State() == gumbleffmpeg.StatePlaying {
+					stream.Stop()
+				}
+				stream = gumbleffmpeg.New(e.Client, SourceFileTrimmed(file))
+				if err := stream.Play(); err != nil {
+					e.Sender.Channel.Send("err: "+err.Error(), false)
+				} else {
+					// e.Sender.Channel.Send("sale", false)
+				}
 			} else {
-				// e.Sender.Channel.Send("sale", false)
+				queue.PushBack(key)
+				e.Sender.Channel.Send("ok enqueueado ", false)
 			}
 		},
 	})
