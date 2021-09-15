@@ -5,11 +5,13 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log"
 	"math/rand"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,6 +23,7 @@ import (
 	_ "layeh.com/gumble/opus"
 
 	"github.com/avelino/slugify"
+	"github.com/go-telegram-bot-api/telegram-bot-api"
 	"github.com/k3a/html2text"
 )
 
@@ -48,6 +51,7 @@ var rcrAudioURL = rcrBaseURL + "chiptune.ogg"
 var rcrInfoCmd = "curl " + rcrStatusURL + " | pup '.roundbox:nth-child(3) tr:last-child td:last-child text{}' | ex -c '%j|%p|q!' /dev/stdin"
 
 func main() {
+
 	files := make(map[string]string)
 	queue := list.New()
 	var stream *gumbleffmpeg.Stream
@@ -72,11 +76,107 @@ func main() {
 			})
 		}
 	}
+
+	multiHandler := func(msg string, reply func(string)) {
+		if msg == "!l" || msg == "l!" {
+			Reload()
+
+			s := []string{}
+			for k, _ := range files {
+				s = append(s, k)
+			}
+			sort.Strings(s)
+
+			reply(strings.Join(s, ", "))
+			return
+		}
+
+		if len(msg) < 3 {
+			return
+		}
+
+		if msg[:3] == "!a " || msg[:3] == "a! " {
+			parts := strings.SplitN(msg, " ", 3)
+			if len(parts) < 3 {
+				reply("? !a nombre https://...")
+				return
+			}
+
+			name := slugify.Slugify(parts[1])
+			link := parts[2]
+
+			link2 := strings.Split(link, ">")
+			if len(link2) > 1 {
+				link3 := strings.Split(link2[1], "<")
+				if len(link3) > 1 {
+					link = link3[0]
+				}
+			}
+
+			reply("ok...")
+			go (func() {
+				cmd := exec.Command("/usr/bin/env", "youtube-dl",
+					"-x", link,
+					"-o", "audio/"+name+".%(id)s.$(ext)s")
+				err := cmd.Run()
+				if err != nil {
+					reply(err.Error())
+				}
+				Reload()
+				reply("OK! !p " + name)
+			})()
+
+			return
+		}
+	}
+
+	tgChatID, err := strconv.ParseInt(os.Getenv("TELEGRAM_CHATID"), 10, 64)
+	if err != nil {
+		log.Panic("Bad env var TELEGRAM_CHATID, should be a number")
+	}
+
+	go (func() {
+		tgbot, err := tgbotapi.NewBotAPI(os.Getenv("TELEGRAM_TOKEN"))
+		if err != nil {
+			log.Panic(err)
+		}
+
+		// tgbot.Debug = true
+
+		log.Printf("T> Authorized on account %s", tgbot.Self.UserName)
+
+		u := tgbotapi.NewUpdate(0)
+		u.Timeout = 60
+
+		updates, err := tgbot.GetUpdatesChan(u)
+
+		for update := range updates {
+			if update.Message == nil { // ignore any non-Message Updates
+				continue
+			}
+
+			if update.Message.Chat.ID != tgChatID {
+				log.Printf("T> dropping message from bad chatid: %d", update.Message.Chat.ID)
+				continue
+			}
+
+			fmt.Printf("T> %s: %s\n", update.Message.From.UserName, update.Message.Text)
+
+			tgreply := func(m string) {
+				msg := tgbotapi.NewMessage(update.Message.Chat.ID, m)
+				msg.ReplyToMessageID = update.Message.MessageID
+				tgbot.Send(msg)
+			}
+
+			multiHandler(update.Message.Text, tgreply)
+		}
+	})()
+
 	var cucha *gumble.Channel
 
 	var gumcli *gumble.Client
 
-	go (func () {
+	go (func() {
 		for {
 			time.Sleep(1 * time.Second)
 
@@ -121,7 +221,7 @@ func main() {
 			msg := e.Message
 			msg = html2text.HTML2Text(msg)
 
-			fmt.Printf("%s: %s\n", e.Sender.Name, msg)
+			fmt.Printf("M> %s: %s\n", e.Sender.Name, msg)
 
 			// if msg == "x" {
 			// msg = "!p xfiles"
@@ -164,59 +264,19 @@ func main() {
 				e.Sender.Channel.Send(msg, false)
 			}
 
-			if msg == "!l" || msg == "l!" {
-				Reload()
-
-				s := []string{}
-				for k, _ := range files {
-					s = append(s, k)
-				}
-				sort.Strings(s)
-
-				e.Sender.Channel.Send(strings.Join(s, ", "), false)
-				return
-			}
-
 			if msg == "!t" || msg == "t!" {
 				e.Sender.Channel.Send(stream.Elapsed().String(), false)
 				return
 			}
 
-			if len(msg) < 3 {
-				return
+			mumblereply := func(m string) {
+				e.Sender.Channel.Send(m, false)
 			}
 
-			if msg[:3] == "!a " || msg[:3] == "a! " {
-				parts := strings.SplitN(msg, " ", 3)
-				if len(parts) < 3 {
-					e.Sender.Channel.Send("? !a nombre https://...", false)
-					return
-				}
+			multiHandler(msg, mumblereply)
 
-				name := slugify.Slugify(parts[1])
-				link := parts[2]
-
-				link2 := strings.Split(link, ">")
-				if len(link2) > 1 {
-					link3 := strings.Split(link2[1], "<")
-					if len(link3) > 1 {
-						link = link3[0]
-					}
-				}
-
-				e.Sender.Channel.Send("ok...", false)
-				go (func() {
-					cmd := exec.Command("/usr/bin/env", "youtube-dl",
-						"-x", link,
-						"-o", "audio/"+name+".%(id)s.$(ext)s")
-					err := cmd.Run()
-					if err != nil {
-						e.Sender.Channel.Send(err.Error(), false)
-					}
-					Reload()
-					e.Sender.Channel.Send("OK! !p "+name, false)
-				})()
-
+			if len(msg) < 3 {
+				return
 			}
 
 			if msg == "!wat" {

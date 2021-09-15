@@ -3,3 +3,5 @@ cert/
 
 # main binary
 juancarlos
+
+.env
