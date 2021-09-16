@@ -78,6 +78,10 @@ func main() {
 	}
 
 	multiHandler := func(msg string, reply func(string)) {
+		if msg == "!ping" {
+			reply("pong!")
+		}
+
 		if msg == "!l" || msg == "l!" {
 			Reload()
 
@@ -136,7 +140,8 @@ func main() {
 	}
 
 	go (func() {
-		tgbot, err := tgbotapi.NewBotAPI(os.Getenv("TELEGRAM_TOKEN"))
+		tgtoken := os.Getenv("TELEGRAM_TOKEN")
+		tgbot, err := tgbotapi.NewBotAPI(tgtoken)
 		if err != nil {
 			log.Panic(err)
 		}
@@ -160,15 +165,31 @@ func main() {
 				continue
 			}
 
-			fmt.Printf("T> %s: %s\n", update.Message.From.UserName, update.Message.Text)
-
 			tgreply := func(m string) {
 				msg := tgbotapi.NewMessage(update.Message.Chat.ID, m)
 				msg.ReplyToMessageID = update.Message.MessageID
 				tgbot.Send(msg)
 			}
 
-			multiHandler(update.Message.Text, tgreply)
+			msgtext := update.Message.Text
+			finaltext := msgtext
+			fmt.Printf("T> %s: %s\n", update.Message.From.UserName, update.Message.Text)
+			reply := update.Message.ReplyToMessage
+			if reply != nil {
+				vid := reply.Video
+				parts := strings.Split(msgtext, " ")
+				if vid != nil && len(parts) == 2 && parts[0] == "!a" {
+					fmt.Printf("T> (reply a un video)\n")
+					filecfg := tgbotapi.FileConfig{FileID: vid.FileID}
+					file, err := tgbot.GetFile(filecfg)
+					if err == nil {
+						link := file.Link(tgtoken)
+						finaltext = msgtext + " " + link
+					}
+				}
+			}
+
+			multiHandler(finaltext, tgreply)
 		}
 	})()
 
